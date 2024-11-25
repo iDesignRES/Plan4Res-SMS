@@ -2,7 +2,7 @@
 
 SMS++ is a set of C++ classes intended to provide a system for modeling complex, block-structured mathematical models (in particular, but not exclusively, single-real-objective optimization problems), and solving them via sophisticated, structure-exploiting algorithms (in particular, but not exclusively, decomposition approaches and structured Interior-Point methods). SMS++ also supports and interfaces with classic solvers such as CPLEX, GUROBI, HiGHS, a bundle method and StOpt - an open source SDDP solver. The SMS++ system can be used to put together any block-structured mathematical programs and exploit the thus available structure.
 
-Plan4Res is an instantation of the SMS++ framework for energy modelling. It comprises a three-layer set of "tools" that are embedded. These are:
+Plan4Res is an instantation of the SMS++ framework for power system modelling. It comprises a three-layer set of "tools" that are embedded. These are:
   - Investment Layer
   - Seasonal Storage Valuation Layer
   - Unit-Commitment Layer (= Economic dispatch if no dynamic constraints are given)
