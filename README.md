@@ -9,9 +9,10 @@ Plan4Res is an instantation of the SMS++ framework for energy modelling. It comp
 
 Each layer relies on lower layers and can thus be consistently set up with more detailled smaller computations. Support for various solvers, whenever possible / implemented, can be harnessed through simple configuration files. As a result, the same model can be solved using various solution approaches and results compared. The Plan4Res toolset takes as input "netcdf" files that describe the system at hand. The system itself is agnostic to units and geography and as a result computations can be made in various units (for instance hydro storage in volume m3 or energy MWh) and at various geographical sizes. The Plan4Res system has been used in various EU sponsored projets : 
   - Plan4Res
-  - OpenEntrance
+  - OpenEntrance (for instance in the case study 1 : https://doi.org/10.5281/zenodo.7871106 , https://doi.org/10.5281/zenodo.7997102 , https://doi.org/10.5281/zenodo.8086793 -  but also 4,5 7: https://doi.org/10.5281/zenodo.8289102 )
   - OpenMod4Africa
-  - xx
+  - CETPartnership "RESILIENT - Resilient Energy System Infrastructure Layouts for Industry, E-Fuels and Network Transition"
+  - CETPartnership "Manoeuvre"
 
 Moreover the mathematics and solution methods are state-of-the-art in mathematical programming.
 
