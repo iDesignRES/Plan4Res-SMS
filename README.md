@@ -12,6 +12,7 @@ Each layer relies on lower layers and can thus be consistently set up with more 
   - OpenEntrance
   - OpenMod4Africa
   - xx
+
 Moreover the mathematics and solution methods are state-of-the-art in mathematical programming.
 
 For the purpose of iDesignRES two subfeatures are of particular interest:
