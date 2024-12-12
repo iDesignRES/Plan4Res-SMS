@@ -106,6 +106,13 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
         # UC block main part
         #
         gnode=Vector{Int64}(undef,0)
+        for iss=1:nb_ss
+            i0 = findall( z_data.Countries .== ss_data.Zone[iss] )
+            if ( isempty(i0) )
+                error(string(" SS Generator ", ss_data.Name[iss], " located at non existing node ", ss_data.Zone[iss]))
+            end
+            append!(gnode,[i0[1]-1])
+        end        
         for ithf=1:nb_thf
             i0 = findall( z_data.Countries .== thf_data.Zone[ithf] )
             if ( isempty(i0) )
@@ -124,13 +131,6 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
             i0 = findall( z_data.Countries .== sts_data.Zone[ists] )
             if ( isempty(i0) )
                 error(string(" STS Generator ", sts_data.Name[ists], " located at non existing node ", sts_data.Zone[ists]))
-            end
-            append!(gnode,[i0[1]-1])
-        end
-        for iss=1:nb_ss
-            i0 = findall( z_data.Countries .== ss_data.Zone[iss] )
-            if ( isempty(i0) )
-                error(string(" STS Generator ", ss_data.Name[iss], " located at non existing node ", ss_data.Zone[iss]))
             end
             append!(gnode,[i0[1]-1])
         end

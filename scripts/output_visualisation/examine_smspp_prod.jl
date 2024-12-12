@@ -22,7 +22,7 @@ ntnu_gen_file  = string(github_local_d, "/input_data/","generation.csv") #"Gener
 ntnu_load_file = string(github_local_d, "/input_data/","load.csv")
 
 # Current Results Name
-res_type = "flows"
+res_type = "dcopf"
 res_name = string("results_",res_type)
 
 # Load the data of the buses
@@ -51,19 +51,9 @@ end
 r_dir       = string(github_local_d, github_smsppout, "/nutsx/", res_name)
 outfile_ext = "OUT"
 
-with_acopf = false
 ts_prod = CSV.read(string(r_dir, "/ActivePower/ActivePower", outfile_ext, ".csv" ), DataFrame; delim=',')
 mx_prod = CSV.read(string(r_dir, "/MaxPower/MaxPower", outfile_ext, ".csv" ), DataFrame; delim=',')
 ts_flow = CSV.read(string(r_dir, "/Flows/Flows", outfile_ext, ".csv" ), DataFrame; delim=',')
-q_file  = string(r_dir, "/Flows/FlowsImag", outfile_ext, ".csv" )
-if ( isfile(q_file) )
-    with_acopf = true
-    ts_flowQ= CSV.read(q_file, DataFrame; delim=',')
-end
-# If the file exists but LineRATEA is not in the incond_data file, finally we are not dealing with ACOPF data
-if ( "LineRATEA" ∉ names(incon_data) )
-    with_acopf = false
-end
 ts_dem  = CSV.read(string(r_dir, "/Demand/Demand", outfile_ext, ".csv" ), DataFrame; delim=',')
 
 nbgen = length(gen_data.unit_id)

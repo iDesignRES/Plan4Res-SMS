@@ -36,7 +36,7 @@ focus_country = "ES"
 #
 # Do we want to make a computation with DC opf stuff :
 #
-with_dcopf    = true #true
+with_dcopf    = false #true
 with_acopf    = false #supersedes with_dcopf flag
 tan_phi       = 0.57 # assuming 30° phase angle
 nb_clip       = 1 # 24 #Clip the timeperiod into multiple substeps in case of DC opf
