@@ -37,10 +37,19 @@ focus_country = "ES"
 # Do we want to make a computation with DC opf stuff :
 #
 with_dcopf    = false #true
-with_acopf    = false #supersedes with_dcopf flag
+with_acopf    = true #supersedes with_dcopf flag
 tan_phi       = 0.57 # assuming 30° phase angle
 nb_clip       = 1 # 24 #Clip the timeperiod into multiple substeps in case of DC opf
 nb_sstep      = div(convert(Dates.Hour, (uc_end_date - uc_bgn_date)).value, nb_clip)
+
+# 
+# Redispatch mode
+#
+with_redispatch = true #false
+pomatwo_dir     = string(github_local_d, "/../POMATWO/results/dayahead")
+pomatwo_res     = string(pomatwo_dir, "/pomatwo_DA_results_GEN.csv")
+res_pomatwo_t = CSV.read(pomatwo_res, DataFrame; delim=',')
+res_pomatwo = unstack(res_pomatwo_t, :Time, :index,:GEN)
 
 # Bellman values
 # 
@@ -952,6 +961,9 @@ end
 if ( with_acopf )
     smspp_bname = string(smspp_bname, "_acopf")
 end
+if ( with_redispatch )
+    smspp_bname = string(smspp_bname, "_rdispatch")
+end
 smspp_bname = string(smspp_bname, "_", string(nb_sstep), "h")
 uc_b_dt = uc_bgn_date
 uc_e_dt = uc_b_dt + Dates.Hour(nb_sstep)
@@ -960,7 +972,11 @@ for iclip=1:nb_clip
     #
     smspp_bname_l = string(github_local_d, github_smsppin,"/nutsx/", smspp_bname, "_", string(iclip), ".txt")
     #write_smspp_file(smspp_bname, "C:/LocalDriveD/Tools/Spain/TimeSeries", uc_bgn_date, uc_end_date, idx_scen, st_idx, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data )
-    write_smspp_file(smspp_bname_l, string(github_local_d, github_smsppin,"/ts"), uc_b_dt, uc_e_dt, idx_scen, st_idx, tan_phi, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data )
+    if ( with_redispatch )
+        write_smspp_file(smspp_bname_l, string(github_local_d, github_smsppin,"/ts"), uc_b_dt, uc_e_dt, idx_scen, st_idx, tan_phi, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data, res_pomatwo )
+    else
+        write_smspp_file(smspp_bname_l, string(github_local_d, github_smsppin,"/ts"), uc_b_dt, uc_e_dt, idx_scen, st_idx, tan_phi, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data )
+    end
     #
     global uc_b_dt = uc_b_dt + Dates.Hour(nb_sstep)
     global uc_e_dt = uc_e_dt + Dates.Hour(nb_sstep)

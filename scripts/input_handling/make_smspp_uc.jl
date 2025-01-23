@@ -21,8 +21,24 @@ include("extract_ts_sequence.jl")
     res_data: the table with the RES generators
     sts_data: the table with the pumped storage data
     ss_data : the seasonal storage data
+
+
 """
-function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z_data, zv_data, ic_data, thf_data, res_data, sts_data, ss_data)
+function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z_data, zv_data, ic_data, thf_data, res_data, sts_data, ss_data, rdisp_dat...)
+#    
+    with_redispatch = false
+    #println("[write_smspp_file] : Number of optional arguments: ", length(rdisp_dat), " ", typeof(rdisp_dat))
+    if ( length(rdisp_dat) > 0 )
+        with_redispatch = true
+        rsched = rdisp_dat[1]
+        # Check if length is ok:
+        if ( size(rsched)[1] != convert(Dates.Hour,(e_date - b_date)).value )
+            error("Mismatch between the dimensions of the provided reference schedule")
+        end
+    end
+#
+#
+#
     open(fname, "w") do fic
         # Write the Header part
         println(fic, "netcdf Block_0 {")
@@ -275,7 +291,14 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
         end        
         # Now write all Thermal unit blocks
         for ithf=1:nb_thf
-            write_smspp_TBlocks(fic, ts_dir, nb_ss_sys + ithf - 1, t_phi, thf_data[ithf,:], b_date, e_date )
+            # If with redispatch find the corresponding unit
+            rf_sch = Vector{Float64}(undef,0)
+            if ( with_redispatch )
+                if ( thf_data.Name[ithf] in names(rsched) )
+                    rf_sch = convert(Vector{Float64},rsched[:, thf_data.Name[ithf]])
+                end
+            end
+            write_smspp_TBlocks(fic, ts_dir, nb_ss_sys + ithf - 1, t_phi, thf_data[ithf,:], b_date, e_date, rf_sch )
         end
         # Now write all the RES blocks
         for ires=1:nb_res
@@ -483,8 +506,10 @@ end
     
     b_date : begin Date
     e_date : end Date
+
+    r_sch  : A reference schedule if not empty vector
 """
-function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date)
+function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date, r_sch)
     println(fic,string("  group: UnitBlock_", string(b_idx)," { "))
     println(fic,"    dimensions:")
     println(fic,string("    	NumberIntervals = ", string(convert(Dates.Hour,(e_date - b_date)).value), " ; "))
@@ -501,6 +526,9 @@ function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date)
     println(fic,"    	double ConstTerm ;")
     println(fic,"    	double InitialPower ;")
     println(fic,"    	uint InitUpDownTime ;")
+    if ( length(r_sch) > 0 )
+        println(fic,"    	double ReferenceSchedule(NumberIntervals) ;")
+    end
     println(fic,"")
     println(fic,"    // group attributes:")
     println(fic,"    		:type = \"ThermalUnitBlock\" ;")
@@ -529,6 +557,10 @@ function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date)
     println(fic,"")
     println(fic,string("     InitUpDownTime = ",string(1), " ; "))
     println(fic,"")
+    if ( length(r_sch) > 0 )
+        println(fic,string("     ReferenceSchedule = ", chop(string(r_sch),head=1), "  ;" ));
+        println(fic,"")
+    end
     println(fic,string("    } // group UnitBlock_",string(b_idx)))
     println(fic,"")
 end

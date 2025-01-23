@@ -22,7 +22,7 @@ ntnu_gen_file  = string(github_local_d, "/input_data/","generation.csv") #"Gener
 ntnu_load_file = string(github_local_d, "/input_data/","load.csv")
 
 # Current Results Name
-res_type = "dcopf"
+res_type = "rdacopf"
 res_name = string("results_",res_type)
 
 # Load the data of the buses
