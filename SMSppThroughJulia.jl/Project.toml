@@ -1,0 +1,17 @@
+name = "SMSppThroughJulia"
+uuid = "ba54dcfa-5c83-45bd-b645-b449cecc3866"
+authors = ["Wim van Ackooij <wim.van-ackooij@edf.fr>"]
+version = "0.1.0"
+
+[deps]
+Libdl = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
+
+[compat]
+Libdl = "1.11.0"
+julia = "^1"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
