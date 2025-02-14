@@ -6,6 +6,8 @@ using DataFrames
 using GLMakie
 #using Makie.GeometryBasics
 
+function plot_redispatch_results()
+
 # Import the needed data
 #
 github_local_d = string(@__DIR__, "/../..")
@@ -35,8 +37,9 @@ end
 #
 
 # Import Pomatwo stuff
+pomatwo_extra_extension = "_inflow_restriction"
 pomatwo_dir     = string(github_local_d, "/../POMATWO/results/dayahead")
-pomatwo_res     = string(pomatwo_dir, "/pomatwo_DA_results_GEN.csv")
+pomatwo_res     = string(pomatwo_dir, "/pomatwo_DA_results_GEN",pomatwo_extra_extension,".csv")
 res_pomatwo_t = CSV.read(pomatwo_res, DataFrame; delim=',')
 res_pomatwo   = unstack(res_pomatwo_t, :Time, :index,:GEN)
 
@@ -74,3 +77,5 @@ end
 display(fig)
 fig_name = string(r_dir, "/", "redispatch_", res_type, ".png")
 save(fig_name, fig)
+
+end
