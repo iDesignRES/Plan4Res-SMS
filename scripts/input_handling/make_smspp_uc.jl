@@ -12,6 +12,10 @@ include("extract_ts_sequence.jl")
     s_idx   : the scenario index if relevant
     st_idx  : Index of the relevant stochastic stage
     t_phi   : the 'tangent' phi value, with tan(phi)=Q/P => Q = tan(phi) P 
+    mmode   : market, i.e., mono-zone mode
+
+    rlf     : Optional argument giving the res load factor - supersedes reading from the timeseries ; The argument is deemend optional if not of sufficient length
+            : rlf is a matrix with possibly multiple columns ; the res_table is assumed to have a column indicating which column to pick
 
     z_data  : the table containing the node names
     zv_data : the table with load information
@@ -22,9 +26,9 @@ include("extract_ts_sequence.jl")
     sts_data: the table with the pumped storage data
     ss_data : the seasonal storage data
 
-
+    rdisp_dat : Optional redispatch data, i.e., provides the Reference schedule
 """
-function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z_data, zv_data, ic_data, thf_data, res_data, sts_data, ss_data, rdisp_dat...)
+function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, mmode, rlf, z_data, zv_data, ic_data, thf_data, res_data, sts_data, ss_data, rdisp_dat...)
 #    
     with_redispatch = false
     #println("[write_smspp_file] : Number of optional arguments: ", length(rdisp_dat), " ", typeof(rdisp_dat))
@@ -67,13 +71,19 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
         println(fic, string("  	TimeHorizon = ",string(convert(Dates.Hour,(e_date - b_date)).value), " ; "))
         println(fic, string("  	NumberUnits = ",string(nb_thf+nb_res+nb_sts+nb_ss_sys + nbslack), " ; ") )
         println(fic, string("  	NumberElectricalGenerators = ",string(nb_thf+nb_res+nb_sts+nb_ss + nbslack), " ; ") )
-        println(fic, string("  	NumberNodes = ",string(size(z_data)[1]), " ; "))
-        println(fic, string("  	NumberLines = ",string(size(ic_data)[1]), " ; "))
+        if ( mmode )
+            println(fic, string("  	NumberNodes = ",string(1), " ; "))
+        else
+            println(fic, string("  	NumberNodes = ",string(size(z_data)[1]), " ; "))
+            println(fic, string("  	NumberLines = ",string(size(ic_data)[1]), " ; "))
+        end
 
         println(fic, "  variables:")
         # Variables
         println(fic, "  	uint GeneratorNode(NumberElectricalGenerators) ;")
-        println(fic, "  	string NodeName(NumberNodes) ; ")
+        if ( !mmode )
+            println(fic, "  	string NodeName(NumberNodes) ; ")
+        end
         println(fic, "  	double ActivePowerDemand(NumberNodes, TimeHorizon) ;")        
         # AC OPF related stuff
         if ( "NodeSusceptance" in names(z_data) )
@@ -84,13 +94,15 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
             println(fic, "  	double NodeMinVoltage(NumberNodes) ;")
             println(fic, "  	double NodeMaxVoltage(NumberNodes) ;")
         end
-        println(fic, "  	uint StartLine(NumberLines) ;")
-        println(fic, "  	uint EndLine(NumberLines) ;")
-        println(fic, "  	double MinPowerFlow(NumberLines) ;")
-        println(fic, "  	double MaxPowerFlow(NumberLines) ;")
-        println(fic, "  	double LineSusceptance(NumberLines) ;")
-        println(fic, "  	double NetworkCost(NumberLines) ;")
-        println(fic, "  	string LineName(NumberLines) ;")
+        if ( !mmode )
+            println(fic, "  	uint StartLine(NumberLines) ;")
+            println(fic, "  	uint EndLine(NumberLines) ;")
+            println(fic, "  	double MinPowerFlow(NumberLines) ;")
+            println(fic, "  	double MaxPowerFlow(NumberLines) ;")
+            println(fic, "  	double LineSusceptance(NumberLines) ;")
+            println(fic, "  	double NetworkCost(NumberLines) ;")
+            println(fic, "  	string LineName(NumberLines) ;")
+        end
         # AC OPF related stuff
         if ( "LineReactance" in names(ic_data) )
             println(fic, "  	double LineResistance(NumberLines) ;")
@@ -121,44 +133,49 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
 
         # UC block main part
         #
-        gnode=Vector{Int64}(undef,0)
-        for iss=1:nb_ss
-            i0 = findall( z_data.Countries .== ss_data.Zone[iss] )
-            if ( isempty(i0) )
-                error(string(" SS Generator ", ss_data.Name[iss], " located at non existing node ", ss_data.Zone[iss]))
+        if ( !mmode )
+            # Write Generator locations
+            gnode=Vector{Int64}(undef,0)
+            for iss=1:nb_ss
+                i0 = findall( z_data.Countries .== ss_data.Zone[iss] )
+                if ( isempty(i0) )
+                    error(string(" SS Generator ", ss_data.Name[iss], " located at non existing node ", ss_data.Zone[iss]))
+                end
+                append!(gnode,[i0[1]-1])
+            end        
+            for ithf=1:nb_thf
+                i0 = findall( z_data.Countries .== thf_data.Zone[ithf] )
+                if ( isempty(i0) )
+                    error(string(" Thermal Generator ", thf_data.Name[ithf], " located at non existing node ", thf_data.Zone[ithf]))
+                end
+                append!(gnode,[i0[1]-1])
             end
-            append!(gnode,[i0[1]-1])
-        end        
-        for ithf=1:nb_thf
-            i0 = findall( z_data.Countries .== thf_data.Zone[ithf] )
-            if ( isempty(i0) )
-                error(string(" Thermal Generator ", thf_data.Name[ithf], " located at non existing node ", thf_data.Zone[ithf]))
+            for ires=1:nb_res
+                i0 = findall( z_data.Countries .== res_data.Zone[ires] )
+                if ( isempty(i0) )
+                    error(string(" RES Generator ", res_data.Name[ires], " located at non existing node ", res_data.Zone[ires]))
+                end
+                append!(gnode,[i0[1]-1])
             end
-            append!(gnode,[i0[1]-1])
+            for ists=1:nb_sts
+                i0 = findall( z_data.Countries .== sts_data.Zone[ists] )
+                if ( isempty(i0) )
+                    error(string(" STS Generator ", sts_data.Name[ists], " located at non existing node ", sts_data.Zone[ists]))
+                end
+                append!(gnode,[i0[1]-1])
+            end
+            # Slacks can be done in one go
+            append!( gnode, collect(1:nbslack).-1 )
+            println(fic, string("   GeneratorNode = ", chop(string(gnode),head=1), "  ;" ) )
+            println(fic, "")
+        
+            println(fic, string("   NodeName = ", strVtoList(z_data.Countries), " ;"))
+            println(fic, "")
         end
-        for ires=1:nb_res
-            i0 = findall( z_data.Countries .== res_data.Zone[ires] )
-            if ( isempty(i0) )
-                error(string(" RES Generator ", res_data.Name[ires], " located at non existing node ", res_data.Zone[ires]))
-            end
-            append!(gnode,[i0[1]-1])
-        end
-        for ists=1:nb_sts
-            i0 = findall( z_data.Countries .== sts_data.Zone[ists] )
-            if ( isempty(i0) )
-                error(string(" STS Generator ", sts_data.Name[ists], " located at non existing node ", sts_data.Zone[ists]))
-            end
-            append!(gnode,[i0[1]-1])
-        end
-        # Slacks can be done in one go
-        append!( gnode, collect(1:nbslack).-1 )
-        println(fic, string("   GeneratorNode = ", chop(string(gnode),head=1), "  ;" ) )
-        println(fic, "")
-
-        println(fic, string("   NodeName = ", strVtoList(z_data.Countries), " ;"))
-        println(fic, "")
         #
         ReacPwrDem = Matrix{Float64}(undef, length(zp_data.Countries), convert(Dates.Hour,(e_date - b_date)).value)
+        TotDem = Vector{Float64}(undef, convert(Dates.Hour,(e_date - b_date)).value)
+        TotDem .= 0.0
         i_nd = 1
         # for each node
         println(fic, "   ActivePowerDemand = " )
@@ -174,14 +191,20 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
             println( string("Node ", nd, " timeseries : ", ts_fname) )
 
             ActiveDemand = round.(ts_vals.*zv_data.value[i0], digits=5)
+            TotDem += ActiveDemand
             ReacPwrDem[i_nd,:] = t_phi*ActiveDemand
             i_nd += 1
 
-            if ( nd == zp_data.Countries[end] )
-                println(fic, string("     ", chop(string(ActiveDemand),head=1), "  ;" ) )
-            else
-                println(fic, string("     ", chop(string(ActiveDemand),head=1), " ," ) )
+            if ( !mmode )
+                if ( nd == zp_data.Countries[end] )
+                    println(fic, string("     ", chop(string(ActiveDemand),head=1), "  ;" ) )
+                else
+                    println(fic, string("     ", chop(string(ActiveDemand),head=1), " ," ) )
+                end
             end
+        end
+        if ( mmode )
+            println(fic, string("     ", chop(string(TotDem),head=1), "  ;" ) )
         end
         println(fic, "")
         # AC OPF related stuff
@@ -249,16 +272,18 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
                 append!(netcs, 0)
             end
         end
-        println(fic, string("   StartLine = ", chop(string(sline),head=1), "  ;" ) )
-        println(fic, "")
-        println(fic, string("   EndLine = ", chop(string(eline),head=1), "  ;" ) )
-        println(fic, "")
-        println(fic, string("   MinPowerFlow = ", chop(string(mnflw),head=1), "  ;" ) )
-        println(fic, "")
-        println(fic, string("   MaxPowerFlow = ", chop(string(mxflw),head=1), "  ;" ) )
-        println(fic, "")
-        println(fic, string("   LineSusceptance = ", chop(string(suscp),head=1), "  ;" ) )
-        println(fic, "")
+        if ( !mmode )
+            println(fic, string("   StartLine = ", chop(string(sline),head=1), "  ;" ) )
+            println(fic, "")
+            println(fic, string("   EndLine = ", chop(string(eline),head=1), "  ;" ) )
+            println(fic, "")
+            println(fic, string("   MinPowerFlow = ", chop(string(mnflw),head=1), "  ;" ) )
+            println(fic, "")
+            println(fic, string("   MaxPowerFlow = ", chop(string(mxflw),head=1), "  ;" ) )
+            println(fic, "")
+            println(fic, string("   LineSusceptance = ", chop(string(suscp),head=1), "  ;" ) )
+            println(fic, "")
+        end
         if ( "LineReactance" in names(ic_data) )
             println(fic, string("   LineResistance = ", chop(string(resnc),head=1), "  ;" ) )
             println(fic, "")
@@ -275,10 +300,12 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
             println(fic, string("   LineRatio = ", chop(string(lnratio),head=1), "  ;" ) )
             println(fic, "")     
         end
-        println(fic, string("   NetworkCost = ", chop(string(netcs),head=1), "  ;" ) )
-        println(fic, "")
-        println(fic, string("   LineName = ", strVtoList(ic_data.Name), " ;"))
-        println(fic, "")
+        if ( !mmode )
+            println(fic, string("   NetworkCost = ", chop(string(netcs),head=1), "  ;" ) )
+            println(fic, "")
+            println(fic, string("   LineName = ", strVtoList(ic_data.Name), " ;"))
+            println(fic, "")
+        end
 
         # Hydro System Blocks
         isys = 0
@@ -302,7 +329,7 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, z
         end
         # Now write all the RES blocks
         for ires=1:nb_res
-            write_smspp_RBlocks(fic, ts_dir, nb_ss_sys + nb_thf + ires - 1, s_idx, t_phi, res_data[ires,:], b_date, e_date )
+            write_smspp_RBlocks(fic, ts_dir, nb_ss_sys + nb_thf + ires - 1, s_idx, t_phi, res_data[ires,:], rlf, b_date, e_date )
         end
         # Now write all the Battery / STS blocks
         for ists=1:nb_sts
@@ -577,7 +604,7 @@ end
     b_date : begin Date
     e_date : end Date
 """
-function write_smspp_RBlocks(fic, ts_dir, b_idx, s_idx, t_phi, t_line, b_date, e_date)
+function write_smspp_RBlocks(fic, ts_dir, b_idx, s_idx, t_phi, t_line, rlf, b_date, e_date)
     println(fic,string("  group: UnitBlock_", string(b_idx)," { "))
     println(fic,"    dimensions:")
     println(fic,string("    	NumberIntervals = ", string(convert(Dates.Hour,(e_date - b_date)).value), " ; "))
@@ -604,10 +631,14 @@ function write_smspp_RBlocks(fic, ts_dir, b_idx, s_idx, t_phi, t_line, b_date, e
     else        
         ts_fname = string(ts_dir, "/", t_line.MaxPowerProfile )
 
-        println( string("RES @ Node ", t_line.Zone, " timeseries : ", ts_fname) )
-
-        ts_vals  = extract_ts_sequence( ts_fname, b_date, e_date, 0 )
-        
+        # Check if the external file is to be used or the given load Profile
+        if ( ( size(rlf,1) == convert(Dates.Hour,(e_date - b_date)).value ) && (t_line.LoadFactorColumn >= 1) && (t_line.LoadFactorColumn <= size(rlf,2)) )
+            println( string("RES @ Node ", t_line.Zone, " timeseries : given load factor, column ", t_line.LoadFactorColumn) )
+            ts_vals = rlf[:, t_line.LoadFactorColumn]
+        else
+            println( string("RES @ Node ", t_line.Zone, " timeseries : ", ts_fname) )
+            ts_vals  = extract_ts_sequence( ts_fname, b_date, e_date, 0 )
+        end
         mxP = round.(ts_vals.*t_line.MaxPower, digits=5)
         println(fic,string("     MaxPower = ", chop(string(mxP),head=1), "  ;" ));
         println(fic,string("     MaxReactivePower = ", chop(string(t_phi*mxP),head=1), "  ;" ));

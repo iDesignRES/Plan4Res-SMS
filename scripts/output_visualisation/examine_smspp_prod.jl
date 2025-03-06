@@ -22,7 +22,7 @@ ntnu_gen_file  = string(github_local_d, "/input_data/","generation.csv") #"Gener
 ntnu_load_file = string(github_local_d, "/input_data/","load.csv")
 
 # Current Results Name
-res_type = "rdacopf"
+res_type = "srdacopf"
 res_name = string("results_",res_type)
 
 # Load the data of the buses
@@ -55,6 +55,22 @@ ts_prod = CSV.read(string(r_dir, "/ActivePower/ActivePower", outfile_ext, ".csv"
 mx_prod = CSV.read(string(r_dir, "/MaxPower/MaxPower", outfile_ext, ".csv" ), DataFrame; delim=',')
 ts_flow = CSV.read(string(r_dir, "/Flows/Flows", outfile_ext, ".csv" ), DataFrame; delim=',')
 ts_dem  = CSV.read(string(r_dir, "/Demand/Demand", outfile_ext, ".csv" ), DataFrame; delim=',')
+
+# Compute total french demand
+# fr_dem = Vector{Float64}(undef,nbT) 
+# fr_dem .= 0.0
+# fr_dem += ts_dem[:,"ES00742"] 
+# fr_dem += ts_dem[:,"ES00859"] 
+# fr_dem += ts_dem[:,"ES00981"] 
+# fr_dem += ts_dem[:,"ES01126"]
+
+# pt_dem = Vector{Float64}(undef,nbT) 
+# pt_dem .= 0.0
+# pt_dem += ts_dem[:,"ES00277"] 
+# pt_dem += ts_dem[:,"ES00813"] 
+# pt_dem += ts_dem[:,"ES00817"] 
+# pt_dem += ts_dem[:,"ES00818"] 
+# pt_dem += ts_dem[:,"ES01092"]
 
 nbgen = length(gen_data.unit_id)
 
