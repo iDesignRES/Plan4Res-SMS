@@ -41,8 +41,11 @@ focus_country = "ES"
 #
 with_selfpomatwo = true #Consider the p4r computation as "POMATWO" -> consistency for Hydro mostly
 with_marketmode = false # If true we solve with all units but on a single mode. This is essentially the result of POMATWO - but by preserving consistency on hydro and the like;
-with_intraday   = false # If true - read the appropriate load factors (forecast) and apply them to RES 
-intraday_id     = 1    # Associated id
+with_intraday   = true # If true - read the appropriate load factors (forecast) and apply them to RES 
+#intraday_id     = 2    # Associated id
+#intraday_ex    = "_DA" #Extension for the SMSpp file
+intraday_ex    = string("_ID_c", lpad(intraday_id-1,2,"0"))
+#intraday_ex  = "_ID_g2"
 with_dcopf    = false #true
 with_acopf    = true #supersedes with_dcopf flag
 tan_phi       = 0.57 # assuming 30° phase angle
@@ -53,12 +56,12 @@ nb_sstep      = div(convert(Dates.Hour, (uc_end_date - uc_bgn_date)).value, nb_c
 res_load_factor = Matrix{Float64}(undef,0, 2)
 if ( with_intraday )
     fcast_dir  = string(github_local_d, "/../POMATWO/results/forecast_res_gen/intraday")
-    fcast_file = string(fcast_dir, "/avail_ID_", intraday_id, ".csv" )
+    fcast_file = string(fcast_dir, "/avail", intraday_ex, ".csv" )
     lf_fcast   = CSV.read(fcast_file, DataFrame; delim=',')
     
     #Hard delete non zero forecast for solar in off hours
-    lf_fcast[1:5,:Solar] .= 0.0
-    lf_fcast[21:24,:Solar] .= 0.0
+    #lf_fcast[1:5,:Solar] .= 0.0
+    #lf_fcast[21:24,:Solar] .= 0.0
 
     res_load_factor = [lf_fcast[:,:Wind] lf_fcast[:,:Solar]]    
 end
@@ -71,6 +74,7 @@ if ( with_selfpomatwo )
     if ( !with_intraday )
         self_pom_folder = "results_da_pomatwo"
     else
+        #self_pom_folder = string("results_id_g2", "_pomatwo")
         self_pom_folder = string("results_ij_", intraday_id ,"_pomatwo")
     end
     r_dir       = string(github_local_d, github_smsppout, "/nutsx/", self_pom_folder)
@@ -722,7 +726,8 @@ if ( with_marketmode )
     smspp_bname = string(smspp_bname, "_market")
 end
 if ( with_intraday )
-    smspp_bname = string(smspp_bname, "_ij_", intraday_id)
+    smspp_bname = string(smspp_bname, intraday_ex)
+    #"_ij_", intraday_id)
 end
 if ( with_selfpomatwo )
     smspp_bname = string(smspp_bname, "_self")
