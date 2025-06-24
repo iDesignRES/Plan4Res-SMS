@@ -13,6 +13,7 @@ include("extract_ts_sequence.jl")
     st_idx  : Index of the relevant stochastic stage
     t_phi   : the 'tangent' phi value, with tan(phi)=Q/P => Q = tan(phi) P 
     mmode   : market, i.e., mono-zone mode
+    bmode   : pumped storage mode: final minimal volume equal to initial volume
 
     rlf     : Optional argument giving the res load factor - supersedes reading from the timeseries ; The argument is deemend optional if not of sufficient length
             : rlf is a matrix with possibly multiple columns ; the res_table is assumed to have a column indicating which column to pick
@@ -28,7 +29,7 @@ include("extract_ts_sequence.jl")
 
     rdisp_dat : Optional redispatch data, i.e., provides the Reference schedule
 """
-function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, mmode, rlf, z_data, zv_data, ic_data, thf_data, res_data, sts_data, ss_data, rdisp_dat...)
+function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, mmode, bmode, rlf, z_data, zv_data, ic_data, thf_data, res_data, sts_data, ss_data, rdisp_dat...)
 #    
     with_redispatch = false
     #println("[write_smspp_file] : Number of optional arguments: ", length(rdisp_dat), " ", typeof(rdisp_dat))
@@ -184,11 +185,17 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, m
             if ( isempty(i0) )
                 error(string("Node : ", nd, " not found!"))
             end
-            ts_fname = string(ts_dir, "/", zv_data.Profile_Timeserie[i0][1])
+            
+            iLoad = 3 #columnindex(rlf, :Load)
 
-            ts_vals  = extract_ts_sequence( ts_fname, b_date, e_date, s_idx )
-
-            println( string("Node ", nd, " timeseries : ", ts_fname) )
+            if ( ( size(rlf,1) == convert(Dates.Hour,(e_date - b_date)).value ) && (iLoad >= 1) && (iLoad <= size(rlf,2)) )
+                println( string("Load @ Node ", nd, " timeseries : given load factor, column ", iLoad) )
+                ts_vals = rlf[:, iLoad]
+            else
+                ts_fname = string(ts_dir, "/", zv_data.Profile_Timeserie[i0][1])
+                println( string("Node ", nd, " timeseries : ", ts_fname) )
+                ts_vals  = extract_ts_sequence( ts_fname, b_date, e_date, s_idx )
+            end
 
             ActiveDemand = round.(ts_vals.*zv_data.value[i0], digits=5)
             TotDem += ActiveDemand
@@ -313,8 +320,11 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, m
             isys += 1
             # filter out all fellows belonging to this HSystem
             sub_tab = filter(row -> ( row.HydroSystem .== hsys ), ss_data )
-        
-            write_smspp_HBlocks(fic,ts_dir, isys - 1, s_idx, st_idx, t_phi, sub_tab, b_date, e_date)
+            if ( with_redispatch )
+                write_smspp_HBlocks(fic,ts_dir, isys - 1, s_idx, st_idx, t_phi, sub_tab, b_date, e_date, rsched)
+            else
+                write_smspp_HBlocks(fic,ts_dir, isys - 1, s_idx, st_idx, t_phi, sub_tab, b_date, e_date)
+            end
         end        
         # Now write all Thermal unit blocks
         for ithf=1:nb_thf
@@ -333,7 +343,14 @@ function write_smspp_file(fname, ts_dir, b_date, e_date, s_idx, st_idx, t_phi, m
         end
         # Now write all the Battery / STS blocks
         for ists=1:nb_sts
-            write_smspp_BatBlocks(fic, nb_ss_sys + nb_thf + nb_res + ists - 1, t_phi, sts_data[ists,:], b_date, e_date )
+            # If with redispatch find the corresponding unit
+            rf_sch = Vector{Float64}(undef,0)
+            if ( with_redispatch )
+                if ( sts_data.Name[ists] in names(rsched) )
+                    rf_sch = convert(Vector{Float64},rsched[:, sts_data.Name[ists]])
+                end
+            end
+            write_smspp_BatBlocks(fic, nb_ss_sys + nb_thf + nb_res + ists - 1, t_phi, sts_data[ists,:], bmode, b_date, e_date, rf_sch )
         end
         # For each bus write a slack block
         for isl=1:nbslack
@@ -361,7 +378,7 @@ end
     b_date : begin Date
     e_date : end Date
 """
-function write_smspp_HBlocks(fic,ts_dir, b_idx, s_idx, st_idx, t_phi, tab, b_date, e_date)
+function write_smspp_HBlocks(fic,ts_dir, b_idx, s_idx, st_idx, t_phi, tab, b_date, e_date, rsch=nothing)
     println(fic,string("  group: UnitBlock_", string(b_idx)," { "))
     println(fic,"    dimensions:")
     println(fic,string("    	NumberHydroUnits = ", string(size(tab)[1]), " ; "))
@@ -372,7 +389,14 @@ function write_smspp_HBlocks(fic,ts_dir, b_idx, s_idx, st_idx, t_phi, tab, b_dat
     # Now write each of the units in this Block
     nb_tab = size(tab)[1]
     for itab=1:nb_tab
-        write_smspp_HunitBlocks(fic, ts_dir, itab - 1, s_idx, t_phi, tab[itab,:], b_date, e_date)
+        # If with redispatch find the corresponding unit
+        rf_sch = Vector{Float64}(undef,0)
+        if ( rsch != nothing )
+            if ( tab.Name[itab] in names(rsch) )
+                rf_sch = convert(Vector{Float64},rsch[:, tab.Name[itab]])
+            end
+        end
+        write_smspp_HunitBlocks(fic, ts_dir, itab - 1, s_idx, t_phi, tab[itab,:], b_date, e_date, rf_sch)
     end
     wvalname=""
     if ( "WaterValues" in names(tab) )
@@ -383,8 +407,12 @@ function write_smspp_HBlocks(fic,ts_dir, b_idx, s_idx, st_idx, t_phi, tab, b_dat
         wvalname = string(ts_dir, "/", wvfile[1] )
     end
     # Write the PolyhedralFunctionBlock if needed ...
-    write_smspp_PolyBlock(fic, wvalname, st_idx)
-    
+    if ( rsch == nothing )
+        write_smspp_PolyBlock(fic, wvalname, st_idx)
+    else
+        write_smspp_PolyBlock(fic, "", st_idx)
+    end
+
     println(fic,string("    } // group UnitBlock_",string(b_idx)))
     println(fic,"")
 end
@@ -407,14 +435,19 @@ function write_smspp_PolyBlock(fic, wvalname, st_idx)
         bvalst = filter( row -> (row.Timestep .== st_idx), bval )
     end
     (nCuts, nCols) = size(bvalst)
-    nVars = nCols - 2
+    nVars = max(nCols - 2,0)
     println(fic,string("        PolyFunction_NumVar = ", string(max(nCols-2,0)), " ; "))       
     if ( nCuts > 0 )
         println(fic,string("        PolyFunction_NumRow = ", string(nCuts), " ; "))
         println(fic,"      variables:")
         println(fic,"        double PolyFunction_A(PolyFunction_NumRow, PolyFunction_NumVar) ;")
         println(fic,"        double PolyFunction_b(PolyFunction_NumRow) ;")
+    else
+        # without cuts let us put a lower bound
+        println(fic,"      variables:")
+        println(fic,"        double PolyFunction_lb ;")
     end
+
     println(fic,"")    
     println(fic,"    // group attributes:")
     println(fic,"    		:type = \"PolyhedralFunctionBlock\" ;")
@@ -422,7 +455,9 @@ function write_smspp_PolyBlock(fic, wvalname, st_idx)
         println(fic,"      data:")
     end
     cutRow = Vector{Float64}(undef, nVars)
-    println(fic, "       PolyFunction_A =")
+    if ( nCuts > 0 )
+        println(fic, "       PolyFunction_A =")
+    end
     for ic=1:nCuts
         for iv=1:nVars
             cutRow[iv] = bvalst[ic,1+iv]
@@ -436,6 +471,9 @@ function write_smspp_PolyBlock(fic, wvalname, st_idx)
     println(fic,"")
     if ( nCuts > 0 )
         println(fic, string("       PolyFunction_b = ", chop(string(bvalst.b),head=1), "  ;" ))
+    else
+        println(fic,"      data:")
+        println(fic, "       PolyFunction_lb = 0.0 ;")
     end
     println(fic,"      } // group PolyhedralFunctionBlock")
 end
@@ -452,7 +490,7 @@ end
     b_date : begin Date
     e_date : end Date
 """
-function write_smspp_HunitBlocks(fic, ts_dir, b_idx, s_idx, t_phi, t_line, b_date, e_date)
+function write_smspp_HunitBlocks(fic, ts_dir, b_idx, s_idx, t_phi, t_line, b_date, e_date, r_sch)
     println(fic,string("    group: HydroUnitBlock_", string(b_idx)," { "))
     println(fic,"      dimensions:")
     println(fic,string("      	NumberReservoirs = ", string(1), " ; "))
@@ -475,6 +513,9 @@ function write_smspp_HunitBlocks(fic, ts_dir, b_idx, s_idx, t_phi, t_line, b_dat
     println(fic,"      	double ConstantTerm(NumberArcs) ;")
     println(fic,"      	double InitialVolumetric(NumberReservoirs) ;")
     println(fic,"      	double InitialFlowRate(NumberArcs) ;")
+    if ( length(r_sch) > 0 )
+        println(fic,"      	double ReferenceSchedule(NumberIntervals) ;")
+    end
     println(fic,"")
     println(fic,"      // group attributes:")
     println(fic,"    		:type = \"HydroUnitBlock\" ;")
@@ -519,6 +560,10 @@ function write_smspp_HunitBlocks(fic, ts_dir, b_idx, s_idx, t_phi, t_line, b_dat
     println(fic,"")
     println(fic,string("       InitialFlowRate = ",string(0), " ; "))
     println(fic,"")
+    if ( length(r_sch) > 0 )
+        println(fic,string("       ReferenceSchedule = ", chop(string(r_sch),head=1), "  ;" ));
+        println(fic,"")
+    end
     println(fic,string("      } // group HydroUnitBlock_",string(b_idx)))
     println(fic,"")
 end
@@ -662,32 +707,43 @@ end
     b_idx  : the block index
     t_phi  : the 'tangent' phi value, with tan(phi)=Q/P => Q = tan(phi) P
     t_line : the data frame line
+    bmode  : final minimal volume equal to initial volume
 
     b_date : begin Date
     e_date : end Date
 """
-function write_smspp_BatBlocks(fic, b_idx, t_phi, t_line, b_date, e_date)
+function write_smspp_BatBlocks(fic, b_idx, t_phi, t_line, bmode, b_date, e_date, r_sch)
     println(fic,string("  group: UnitBlock_", string(b_idx)," { "))
     println(fic,"    dimensions:")
     println(fic,string("    	NumberIntervals = ", string(convert(Dates.Hour,(e_date - b_date)).value), " ; "))
     println(fic,"    variables:")
+    println(fic,"    	double Cost ;")
     println(fic,"    	double MaxPower ;")
     println(fic,"    	double MinPower ;")
     println(fic,"    	double MaxReactivePower ;")
     println(fic,"    	double MinReactivePower ;")    
     println(fic,"    	double VoltageMagnitude ;")
     println(fic,"    	double MaxStorage ;")
-    println(fic,"    	double MinStorage ;")
+    if ( bmode )
+        println(fic,"    	double MinStorage(NumberIntervals) ;")
+    else
+        println(fic,"    	double MinStorage ;")
+    end
     println(fic,"    	double InitialPower ;")
     println(fic,"    	double InitialStorage ;")
     println(fic,"    	double StoringBatteryRho ;")
     println(fic,"    	double ExtractingBatteryRho ;")
     println(fic,"    	double Demand(NumberIntervals) ;")
+    if ( length(r_sch) > 0 )
+        println(fic,"    	double ReferenceSchedule(NumberIntervals) ;")
+    end
     println(fic,"")
     println(fic,"    // group attributes:")
     println(fic,"    		:type = \"BatteryUnitBlock\" ;")
     println(fic,string("    		:name = \"", string(t_line.Name),"\" ; ") )
     println(fic,"    data:")
+    println(fic,"")
+    println(fic,string("     Cost = ",string(0.0), " ; "))
     println(fic,"")
     println(fic,string("     MaxPower = ",string(t_line.MaxPower), " ; "))
     println(fic,"")
@@ -701,7 +757,14 @@ function write_smspp_BatBlocks(fic, b_idx, t_phi, t_line, b_date, e_date)
     println(fic,"")
     println(fic,string("     MaxStorage = ",string(t_line.MaxVolume), " ; "))
     println(fic,"")
-    println(fic,string("     MinStorage = ",string(t_line.MinVolume), " ; "))
+    dVec = Vector{Float64}(undef,convert(Dates.Hour,(e_date - b_date)).value)
+    dVec .= t_line.MinVolume
+    dVec[end] = t_line.InitialVolume
+    if ( bmode )
+        println(fic,string("     MinStorage = ",chop(string(dVec),head=1), "  ;" ));
+    else
+        println(fic,string("     MinStorage = ",string(t_line.MinVolume), " ; "))
+    end
     println(fic,"")
     println(fic,string("     InitialPower = ",string(0), " ; "))
     println(fic,"")
@@ -711,10 +774,14 @@ function write_smspp_BatBlocks(fic, b_idx, t_phi, t_line, b_date, e_date)
     println(fic,"")
     println(fic,string("     ExtractingBatteryRho = ",string(t_line.TurbineEfficiency), " ; "))
     println(fic,"")    
-    dVec = Vector{Float64}(undef,convert(Dates.Hour,(e_date - b_date)).value)
+    
     dVec .= 0.0
     println(fic,string("     Demand = ", chop(string(dVec),head=1), "  ;" ));
-    println(fic,"")
+    println(fic,"")    
+    if ( length(r_sch) > 0 )
+        println(fic,string("     ReferenceSchedule = ", chop(string(r_sch),head=1), "  ;" ));
+        println(fic,"")
+    end
     println(fic,string("    } // group UnitBlock_",string(b_idx)))
     println(fic,"")
 end

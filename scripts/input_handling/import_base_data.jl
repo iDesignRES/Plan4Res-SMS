@@ -83,11 +83,20 @@ function make_generator_baselists(st_idx)
 
     # List of technology related costs and information (prop cost, fixed cost, InvestmentCost)
     #
-    cThf_l = Dict([("Coal", (13.05, 42380, 1695200)), ("Gas", (31.24, 18011.5, 663122.3529)),
-        ("Biomass", (64.022, 55242.33, 2511015)), ("Waste", (62.00, 55242.33, 2511015)),
-        ("Nuclear", (12.42, 100122.75, 6357000)), ("Oil", (78.92, 6897.345, 688675)),
-        ("Oil/Diesel", (85.00, 6500.345, 688675)), ("Diesel", (90.00, 6500.345, 688675)),
-        ("Oil/Gas/Diesel", (83.00, 6500.345, 688675)), ("Oil/Gas", (82.00, 6500.345, 688675))])
+    # -- original cost structure
+    #cThf_l = Dict([("Coal", (13.05, 42380, 1695200)), ("Gas", (31.24, 18011.5, 663122.3529)),
+    #    ("Biomass", (64.022, 55242.33, 2511015)), ("Waste", (62.00, 55242.33, 2511015)),
+    #    ("Nuclear", (12.42, 100122.75, 6357000)), ("Oil", (78.92, 6897.345, 688675)),
+    #    ("Oil/Diesel", (85.00, 6500.345, 688675)), ("Diesel", (90.00, 6500.345, 688675)),
+    #    ("Oil/Gas/Diesel", (83.00, 6500.345, 688675)), ("Oil/Gas", (82.00, 6500.345, 688675))])
+    #
+    #
+    # -- updated cost structure - 2025 data from VariableCostV101 + fixed costs from Ehsan's file
+    cThf_l = Dict([("Coal", (45.132, 38500, 1695200)), ("Gas", (160.872, 35995, 663122.3529)),
+        ("Biomass", (6.414, 43800, 2511015)), ("Waste", (62.00, 55242.33, 2511015)),
+        ("Nuclear", (14.779, 117500, 6357000)), ("Oil", (132.870, 20346, 688675)),
+        ("Oil/Diesel", (132.870, 20346, 688675)), ("Diesel", (132.870, 20346, 688675)),
+        ("Oil/Gas/Diesel", (132.870, 20346, 688675)), ("Oil/Gas", (124.024, 20346, 688675))])
 
     # List of technology related information 
     # the last indicates the column of the res load factor => -1 indicates necessary use of the TS file 
@@ -159,6 +168,10 @@ function make_generator_data(bus_data, gen_data, st_idx)
             nb_thf += 1
         end
     end
+    #
+    # To disambiguate we add a perturbation to the proportional costs
+    delta_vc = (0.1 / nb_thf)
+
     # Make the thermal unit file from this
     tu_thf_data = DataFrame(Zone=Vector{String}(undef, nb_thf), Name=Vector{String}(undef, nb_thf), NumberUnits=Vector{Int64}(undef, nb_thf),
         MaxPower=Vector{Float64}(undef, nb_thf), MaxPowerProfile=Vector{String}(undef, nb_thf), VariableCost=Vector{Float64}(undef, nb_thf), FixedCost=Vector{Float64}(undef, nb_thf),
@@ -173,6 +186,9 @@ function make_generator_data(bus_data, gen_data, st_idx)
     for i = 1:nT
         if (gen_data.primary_fuel[i] in Thf_list)
             i_thf += 1
+            # The perturbation to add to the proportional costs
+            pc_modifier = (-0.05 + delta_vc*i_thf)
+
             # Add this fellow - first check if it actually exists at some existing bus
             l0 = length(findall(bus_data.bus_id .== gen_data.bus_id[i]))
             if (l0 == 0)
@@ -186,7 +202,7 @@ function make_generator_data(bus_data, gen_data, st_idx)
             tu_thf_data[i_thf, :MaxPower] = gen_data.capacity_mw[i]
 
             cost_info = cThf_l[gen_data.primary_fuel[i]]
-            tu_thf_data[i_thf, :VariableCost] = cost_info[1]
+            tu_thf_data[i_thf, :VariableCost] = cost_info[1] + pc_modifier
             tu_thf_data[i_thf, :FixedCost] = cost_info[2]
             tu_thf_data[i_thf, :InvestmentCost] = cost_info[3]
         end
@@ -293,6 +309,10 @@ function make_generator_data(bus_data, gen_data, st_idx)
 
             tech_info = cSTS_l[gen_data.primary_fuel[i]]
             sts_data[i_sts, :MaxVolume] = tech_info[1] * gen_data.capacity_mw[i]
+
+            # Add initial volume
+            sts_data[i_sts,:InitialVolume] = 0.3*sts_data[i_sts, :MaxVolume]
+
             sts_data[i_sts, :TurbineEfficiency] = tech_info[2]
             sts_data[i_sts, :PumpingEfficiency] = tech_info[3]
         end

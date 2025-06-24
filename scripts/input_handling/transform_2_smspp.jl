@@ -25,27 +25,52 @@ ntnu_load_file = string(github_local_d, "/input_data/","load.csv")
 #
 # Other data
 #
-idx_scen      = 0 #Some scenario index
+day_choice    = 1 #integer 0 = 08/07 ; 1 = 02/12, ...
+day_extens    = ["", "_d2"] #the current list of name extensions - do not change
+day_str       = day_extens[day_choice+1] #picking the right item in the previous list
+idx_scen      = 0 #Some scenario index 
 st_idx        = 0 #Stochastic stage belonging to this computation => to be deduced from ssv_stp
 bgn_date      = DateTime("02/07/2030 00:00", "dd/mm/yyyy HH:MM")
 #
-uc_bgn_date   = DateTime("08/07/2030 00:00", "dd/mm/yyyy HH:MM")
-uc_end_date   = DateTime("09/07/2030 00:00", "dd/mm/yyyy HH:MM")
+if ( day_choice == 0 )
+    uc_bgn_date   = DateTime("08/07/2030 00:00", "dd/mm/yyyy HH:MM")
+    uc_end_date   = DateTime("09/07/2030 00:00", "dd/mm/yyyy HH:MM")
+elseif ( day_choice == 1 )
+    uc_bgn_date   = DateTime("02/12/2030 00:00", "dd/mm/yyyy HH:MM")
+    uc_end_date   = DateTime("03/12/2030 00:00", "dd/mm/yyyy HH:MM")
+else
+    error("Undefined day")
+end
 #
 generic_year  = 2050
 # 
-edf_impexp    = string(github_local_d, github_smsppout, "/nuts0/results_simul/Flows/Flows",string(idx_scen),".csv")
+edf_impexp    = string(github_local_d, github_smsppout, "/nuts0/results_simul/Flows/Flows_Scen",string(idx_scen),"_OUT.csv")
+#
+# -- any real data: (if not available, then empty string)
+if ( day_choice == 0 )
+    real_impexp   = string(github_local_d, "/input_data/","import_export_0807.csv")
+elseif ( day_choice == 1 )
+    real_impexp   = string(github_local_d, "/input_data/","import_export_0212.csv")
+else
+    error("Undefined day")
+end
+#real_impexp   = ""
+#
 focus_country = "ES"
 #
 # Do we want to make a computation with DC opf stuff :
 #
+
+th_limit_factor  = 0.7 # Factor to reduce the thermal line capacities artificially in the computations (in [0,1] as a percentage of total original value)
 with_selfpomatwo = true #Consider the p4r computation as "POMATWO" -> consistency for Hydro mostly
 with_marketmode = false # If true we solve with all units but on a single mode. This is essentially the result of POMATWO - but by preserving consistency on hydro and the like;
-with_intraday   = true # If true - read the appropriate load factors (forecast) and apply them to RES 
-#intraday_id     = 2    # Associated id
+with_intraday   = true # If true - read the appropriate load factors (forecast) and apply them to RES as well as Load if there 
+pumpstormode    = true # final minimal volume equal to initial volume
+#intraday_id     = 1    # Associated id
 #intraday_ex    = "_DA" #Extension for the SMSpp file
-intraday_ex    = string("_ID_c", lpad(intraday_id-1,2,"0"))
-#intraday_ex  = "_ID_g2"
+intraday_ex    = string("_ID",day_str,"_c", lpad(intraday_id-1,2,"0"))
+#intraday_ex  = string("_ID",day_str,"_g2")
+#intraday_ex  = "_bal_da"
 with_dcopf    = false #true
 with_acopf    = true #supersedes with_dcopf flag
 tan_phi       = 0.57 # assuming 30° phase angle
@@ -55,15 +80,20 @@ nb_sstep      = div(convert(Dates.Hour, (uc_end_date - uc_bgn_date)).value, nb_c
 #
 res_load_factor = Matrix{Float64}(undef,0, 2)
 if ( with_intraday )
-    fcast_dir  = string(github_local_d, "/../POMATWO/results/forecast_res_gen/intraday")
+    #fcast_dir  = string(github_local_d, "/../POMATWO/results/forecast_res_gen/intraday")
+    fcast_dir  = string(github_local_d, "/../NTNU/ES/forecast")
     fcast_file = string(fcast_dir, "/avail", intraday_ex, ".csv" )
-    lf_fcast   = CSV.read(fcast_file, DataFrame; delim=',')
     
-    #Hard delete non zero forecast for solar in off hours
-    #lf_fcast[1:5,:Solar] .= 0.0
-    #lf_fcast[21:24,:Solar] .= 0.0
+    #fcast_dir  = string(github_local_d, "/../POMATWO/results/forecast_res_gen/")
+    #fcast_file = string(fcast_dir, "/balance/actual_gen_summer_bal.csv" )
+    
+    lf_fcast   = CSV.read(fcast_file, DataFrame; delim=',')
 
-    res_load_factor = [lf_fcast[:,:Wind] lf_fcast[:,:Solar]]    
+    if ( hasproperty(lf_fcast, :Load) )
+        res_load_factor = [lf_fcast[:,:Wind] lf_fcast[:,:Solar] lf_fcast[:, :Load] ]    
+    else      
+        res_load_factor = [lf_fcast[:,:Wind] lf_fcast[:,:Solar]]    
+    end
 end
 
 # 
@@ -72,10 +102,17 @@ end
 with_redispatch = true #false
 if ( with_selfpomatwo )
     if ( !with_intraday )
-        self_pom_folder = "results_da_pomatwo"
+        self_pom_folder = string("results",day_str,"_da_pomatwo")
     else
-        #self_pom_folder = string("results_id_g2", "_pomatwo")
-        self_pom_folder = string("results_ij_", intraday_id ,"_pomatwo")
+        if ( occursin("da", intraday_ex) )
+            self_pom_folder = string("results",day_str,"_da_pomatwo")
+        elseif ( occursin("g1", intraday_ex) )
+            self_pom_folder = string("results_id",day_str,"_g1", "_pomatwo")
+        elseif ( occursin("g2", intraday_ex) )
+            self_pom_folder = string("results_id",day_str,"_g2", "_pomatwo")
+        else
+            self_pom_folder = string("results_ij",day_str,"_", intraday_id ,"_pomatwo")
+        end
     end
     r_dir       = string(github_local_d, github_smsppout, "/nutsx/", self_pom_folder)
     outfile_ext = "OUT"    
@@ -100,7 +137,7 @@ end
 # 
 ssv_step      = 168
 bell_vals     = string(github_local_d, github_smsppout, "/nuts0/results_simul/BellmanValuesOUT.csv")
-vol_file      = string(github_local_d, github_smsppout, "/nuts0/results_simul/Volume/Volume",string(idx_scen),".csv")
+vol_file      = string(github_local_d, github_smsppout, "/nuts0/results_simul/Volume/Volume_Scen",string(idx_scen),"_OUT.csv")
 
 # Compute the stochastic stage index based on the temporal data
 st_idx = div(convert(Dates.Hour, (uc_end_date - bgn_date)).value, ssv_step)
@@ -152,6 +189,46 @@ if ( typeof(impexp_data[1,1]) == Int64 )
 else
     tcol  = impexp_data[:,1]
 end
+# Add / replace real import/export data if exists
+if ( !isempty( real_impexp ) )
+    rrimpexp = CSV.read( real_impexp, DataFrame; delim=';')
+    if ( size(rrimpexp)[1] != nb_sstep )
+        error("this is not ok")
+    end
+    ccoln = names(rrimpexp)[2:end]
+
+    i0 = findall( tcol .== Dates.format(uc_bgn_date, "dd/mm/yyyy HH:MM") )[1]
+    if ( isempty(i0) )
+        error("date not found")
+    end
+    for j=1:length(countries_to_cut)
+        ln_name1 = string(focus_country,">",countries_to_cut[j])
+        ln_name2 = string(countries_to_cut[j],">",focus_country)
+
+        itargetp = findall( coln .== ln_name1 )
+        itargetm = findall( coln .== ln_name2 )
+
+        isourcep = findall( ccoln .== ln_name1 )
+        isourcem = findall( ccoln .== ln_name2 )
+
+        if ( !isempty(isourcem) || !isempty(isourcep) )        
+            # there is data to put here
+            if ( !isempty(itargetp) )
+                if ( !isempty(isourcep))
+                    impexp_data[i0:(i0+nb_sstep-1),1+itargetp[1]] .= rrimpexp[:, 1+isourcep[1]]
+                else
+                    impexp_data[i0:(i0+nb_sstep-1),1+itargetp[1]] .= -1.0*rrimpexp[:, 1+isourcem[1]]
+                end
+            else
+                if ( !isempty(isourcep))
+                    impexp_data[i0:(i0+nb_sstep-1),1+itargetm[1]] .= -1.0*rrimpexp[:, 1+isourcep[1]]
+                else
+                    impexp_data[i0:(i0+nb_sstep-1),1+itargetm[1]] .= rrimpexp[:, 1+isourcem[1]]
+                end
+            end
+        end
+    end
+end
 
 nb_ts = size(impexp_data)[1]
 imp_ts = DataFrame( Date=Vector{String}(undef, nb_ts), MaxPower=Vector{Float64}(undef, nb_ts) )
@@ -180,9 +257,9 @@ for j=1:length(countries_to_cut)
         # For all of those lines, find out some strength
         weight[l] = sum( (lines_data[JJ,:voltage].*lines_data[JJ,:Imax]) )
     end
-
+    
     if ( ln_name1 in coln )
-        kcol = findall( ln_name1 in coln )[1]
+        kcol = findall( coln .== ln_name1 )[1]
         # Negative values are importations to focus_country : these are productions in the target nodes ; positive values are demands        
         for l=1:length(I)
             wgh = weight[l]/sum(weight)
@@ -190,12 +267,13 @@ for j=1:length(countries_to_cut)
             #Import stuff 
             fic_name_i = string("imp_pmax_", bus_data.bus_id[[I[l]]][1], ".csv")
             imp_ts[:,:MaxPower] = -1.0*min.( wgh.*impexp_data[:,coln[kcol]] ,0.0)
+
             CSV.write(string(github_local_d, github_smsppin, "/ts/",fic_name_i), imp_ts; delim=',')
 
             #push!( tu_imp_data, [string(bus_data.country[I[l]],"_", bus_data.bus_id[I[l]]),"IMP",1,1.0,fic_name_i,
             #                     0.001, 0,0,0,0,0 ] )
 
-            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),"IMP",1,1.0,fic_name_i,
+            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),string("IMP_",countries_to_cut[j],"_",l),1,1.0,fic_name_i,
                                  0.001, 0,0,0,0,0 ] )
 
             #Add little column to det_ts
@@ -208,7 +286,7 @@ for j=1:length(countries_to_cut)
         end
     end
     if ( ln_name2 in coln )
-        kcol = findall( ln_name2 in coln )[1]
+        kcol = findall( coln .== ln_name2 )[1]
         # Negative values are exportations to focus_country : 
         for l=1:length(I)
             wgh = weight[l]/sum(weight)
@@ -221,7 +299,7 @@ for j=1:length(countries_to_cut)
             #push!( tu_imp_data, [string(bus_data.country[I[l]],"_", bus_data.bus_id[I[l]]),"IMP",1, 1.0, fic_name_i,
             #                     0.001, 0,0,0,0,0 ] )
             
-            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),"IMP",1, 1.0, fic_name_i,
+            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),string("IMP_",countries_to_cut[j],"_",l),1, 1.0, fic_name_i,
                                  0.001, 0,0,0,0,0 ] )
 
             #Add little column to det_ts
@@ -259,8 +337,8 @@ CSV.write(string(github_local_d, github_smsppin, "/nutsx/ZP_ZonePartition.csv"),
 # Make the ZV_ZoneValues file
 # Total load comes from ENTSOE-E sources
 # 
-load_d   = Dict([("FR", (1410503232, "AggregatedTimeSerie_Total_BigFrance.csv")), ("ES", (228746533,"Profile-Iberia.csv")),
-                 ("PT", (50567216,"Profile-Iberia.csv")) ])
+load_d   = Dict([("FR", (1410503232, "AggregatedTimeSerie_Total_BigFrance.csv")), ("ES", (228746533,"Profile-Iberia2.csv")),
+                 ("PT", (50567216,"Profile-Iberia2.csv")) ])
 
 nb_bus = length(bus_data.bus_id)
 #
@@ -459,7 +537,7 @@ for itl=1:nb_icdata
     # The following two are based on the above formula
     #incon_data[itl, :MaxPowerFlow] = nb_par_lines[itl]*round.(f_to_km*(s_cst*lines_data.voltage[i].^2)./(lines_data.length[i]*ps_cst);digits=3)
     #incon_data[itl, :MinPowerFlow] = -nb_par_lines[itl]*round.(f_to_km*(s_cst*lines_data.voltage[i].^2)./(lines_data.length[i]*ps_cst);digits=3)
-    incon_data[itl, :MaxPowerFlow] = round(sqrt(3)/(sqrt(1 + tan_phi^2))*nb_par_lines[itl]*lines_data.Imax[i]*lines_data.voltage[i]; digits=3)
+    incon_data[itl, :MaxPowerFlow] = round(th_limit_factor*sqrt(3)/(sqrt(1 + tan_phi^2))*nb_par_lines[itl]*lines_data.Imax[i]*lines_data.voltage[i]; digits=3)
     incon_data[itl, :MinPowerFlow] = - incon_data[itl, :MaxPowerFlow]
 
 
@@ -479,7 +557,7 @@ for itl=1:nb_icdata
                 incon_data[itl, :LineMinAngle] = -30.0
                 incon_data[itl, :LineMaxAngle] = 30.0
                 incon_data[itl, :LineShiftAngle] = 0.0
-                incon_data[itl, :LineRATEA] = round(sqrt(3)*nb_par_lines[itl]*lines_data.Imax[i]*lines_data.voltage[i]; digits=3) #round(sqrt(1 + tan_phi^2)*incon_data.MaxPowerFlow[itl][1]; digits=3)
+                incon_data[itl, :LineRATEA] = round(th_limit_factor*sqrt(3)*nb_par_lines[itl]*lines_data.Imax[i]*lines_data.voltage[i]; digits=3) #round(sqrt(1 + tan_phi^2)*incon_data.MaxPowerFlow[itl][1]; digits=3)
                 incon_data[itl, :LineRatio] = 0.0                
             end
         end
@@ -547,7 +625,7 @@ blist = make_generator_baselists(st_idx)
 (Thf_list, Res_list, STS_list, SS_list) = blist.lists
 (cThf_l,cRes_l,cSTS_l,cSS_l, ss_d) = blist.dicts
 
-# Append the transformers to the set of Thermal units
+# Append the import thermals to the set of Thermal units
 append!(tu_thf_data, tu_imp_data)
 
 # In Market mode kill any fixed costs
@@ -744,9 +822,9 @@ for iclip=1:nb_clip
     smspp_bname_l = string(github_local_d, github_smsppin,"/nutsx/", smspp_bname, "_", string(iclip), ".txt")
     #write_smspp_file(smspp_bname, "C:/LocalDriveD/Tools/Spain/TimeSeries", uc_bgn_date, uc_end_date, idx_scen, st_idx, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data )
     if ( with_redispatch )
-        write_smspp_file(smspp_bname_l, string(github_local_d, github_smsppin,"/ts"), uc_b_dt, uc_e_dt, idx_scen, st_idx, tan_phi, with_marketmode, res_load_factor, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data, res_pomatwo )
+        write_smspp_file(smspp_bname_l, string(github_local_d, github_smsppin,"/ts"), uc_b_dt, uc_e_dt, idx_scen, st_idx, tan_phi, with_marketmode, pumpstormode, res_load_factor, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data, res_pomatwo )
     else
-        write_smspp_file(smspp_bname_l, string(github_local_d, github_smsppin,"/ts"), uc_b_dt, uc_e_dt, idx_scen, st_idx, tan_phi, with_marketmode, res_load_factor, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data )
+        write_smspp_file(smspp_bname_l, string(github_local_d, github_smsppin,"/ts"), uc_b_dt, uc_e_dt, idx_scen, st_idx, tan_phi, with_marketmode, pumpstormode, res_load_factor, zp_data, zv_zone_data, incon_data, tu_thf_data, res_units_data, sts_data, ss_data )
     end
     #
     global uc_b_dt = uc_b_dt + Dates.Hour(nb_sstep)

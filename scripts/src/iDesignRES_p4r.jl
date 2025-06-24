@@ -16,6 +16,8 @@ module iDesignRES_p4r
     export plot_redispatch_evol
     export compute_redispatch_cost
     export total_prod_changes
+    export total_tech_generation
+    export use_of_id_markets
 
     include("../input_handling/import_base_data.jl")
     include("../output_visualisation/examine_redispatch.jl")
