@@ -27,7 +27,7 @@ ntnu_gen_file  = string(github_local_d, "/input_data/","generation.csv") #"Gener
 ntnu_load_file = string(github_local_d, "/input_data/","load.csv")
 
 # Current Results Name
-res_type = "srdacopf_d2"
+res_type = "srdacopf"
 res_name = string("results_",res_type)
 
 # Make some power plant icons
@@ -351,6 +351,38 @@ for vt in unique(lines_data.voltage)
         translate!(objL, 0, 0, 2)
     end
 end
+
+# Compute some power losses
+loss = similar(ts_flow)
+loss[:,1] .= ts_flow[:,1]
+for lrow in eachrow(incon_data)
+    loss[:,lrow.Name] .= 0.0
+    if occursin("LTGES", lrow.Name)
+       R = lrow.LineResistance
+       I = findall( lines_data.line_id .== lrow.Name[2:end] )
+       if (isempty(I))
+        println(lrow.Name)
+       end
+       V = lines_data.voltage[I[1]];
+
+       p = ts_flow[:,lrow.Name]
+       q = ts_flowQ[:,lrow.Name]
+
+       loss[:,lrow.Name] .= (p.^2 + q.^2) * R/(3.0*V^2);
+
+       # As a proxy we assume both busses to have the line voltage
+       # The formula is G| Vk - Vm |^2 with G the conductance = 1 / LineResistance
+       # Now voltages in the bus may deviate at max by 5% and so we should get
+       # 
+       # loss ~ 1 / R * | 0.1 * V |^2 
+       # as the maximum loss
+       #
+       #if ( R > 1e-1 )
+       #    loss[:,lrow.Name] .= 1/R*0.01*V.^2
+       #end
+    end
+end
+
 
 Tech_to_Symb = Dict([("Solar",solarsymb),("Wind",windsymb),("Hydro",hydrosymb1),
                      ("Coal",thfsymb),("Gas",thfsymb),("Biomass",thfsymb),("Oil/Diesel",thfsymb),("Diesel",thfsymb),("Oil/Gas/Diesel",thfsymb),("Oil",thfsymb),("Oil/Gas",thfsymb),

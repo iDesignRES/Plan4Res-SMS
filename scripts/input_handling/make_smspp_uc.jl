@@ -407,11 +407,11 @@ function write_smspp_HBlocks(fic,ts_dir, b_idx, s_idx, st_idx, t_phi, tab, b_dat
         wvalname = string(ts_dir, "/", wvfile[1] )
     end
     # Write the PolyhedralFunctionBlock if needed ...
-    if ( rsch == nothing )
+    #if ( rsch == nothing )
         write_smspp_PolyBlock(fic, wvalname, st_idx)
-    else
-        write_smspp_PolyBlock(fic, "", st_idx)
-    end
+    #else
+    #    write_smspp_PolyBlock(fic, "", st_idx)
+    #end
 
     println(fic,string("    } // group UnitBlock_",string(b_idx)))
     println(fic,"")
@@ -586,6 +586,7 @@ function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date, 
     println(fic,"    dimensions:")
     println(fic,string("    	NumberIntervals = ", string(convert(Dates.Hour,(e_date - b_date)).value), " ; "))
     println(fic,"    variables:")
+    println(fic,"    	double MinPower ;")
     if (isempty(t_line.MaxPowerProfile))
         println(fic,"    	double MaxPower ;")
         println(fic,"    	double MaxReactivePower ;")
@@ -598,6 +599,10 @@ function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date, 
     println(fic,"    	double ConstTerm ;")
     println(fic,"    	double InitialPower ;")
     println(fic,"    	uint InitUpDownTime ;")
+    println(fic,"    	uint MinDownTime ;")
+    if ( t_line.FixToMaximum > 0 )
+        println(fic,"    	uint FixToMaximum ;")
+    end
     if ( length(r_sch) > 0 )
         println(fic,"    	double ReferenceSchedule(NumberIntervals) ;")
     end
@@ -606,17 +611,26 @@ function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date, 
     println(fic,"    		:type = \"ThermalUnitBlock\" ;")
     println(fic,string("    		:name = \"", string(t_line.Name),"\" ; ") )
     println(fic,"    data:")
+    println(fic,string("     MinPower = ",string(t_line.MinPower), " ; "))
     if (isempty(t_line.MaxPowerProfile))
         println(fic,string("     MaxPower = ",string(t_line.MaxPower), " ; "))
         println(fic,string("     MaxReactivePower = ",string(t_phi*t_line.MaxPower), " ; "))
     else
-        ts_fname = string(ts_dir, "/", t_line.MaxPowerProfile )
-        ts_vals  = extract_ts_sequence( ts_fname, b_date, e_date, 0 )
+        if ( occursin(".csv", t_line.MaxPowerProfile) )
+            # this is a file that must be used and extracted from
+            ts_fname = string(ts_dir, "/", t_line.MaxPowerProfile )
+            ts_vals  = extract_ts_sequence( ts_fname, b_date, e_date, 0 )
 
-        println( string("THF @ Node ", t_line.Zone, " timeseries : ", ts_fname) )
-        mxP = round.(ts_vals.*t_line.MaxPower, digits=5)
-        println(fic,string("     MaxPower = ", chop(string(mxP),head=1), "  ;" ));
-        println(fic,string("     MaxReactivePower = ", chop(string(t_phi*mxP),head=1), "  ;" ));
+            println( string("THF @ Node ", t_line.Zone, " timeseries : ", ts_fname) )
+            mxP = round.(ts_vals.*t_line.MaxPower, digits=5)
+            println(fic,string("     MaxPower = ", chop(string(mxP),head=1), "  ;" ));
+            println(fic,string("     MaxReactivePower = ", chop(string(t_phi*mxP),head=1), "  ;" ));
+        else
+            #in this case it is a string Array
+            mxP = parse.(Float64,split(chop(t_line.MaxPowerProfile,head=1)," "))
+            println(fic,string("     MaxPower = ", chop(string(mxP),head=1), "  ;" ));
+            println(fic,string("     MaxReactivePower = ", chop(string(t_phi*mxP),head=1), "  ;" ));
+        end
     end
     println(fic,"")
     println(fic,string("     VoltageMagnitude = ",string(1.0), " ; "))
@@ -629,6 +643,12 @@ function write_smspp_TBlocks(fic, ts_dir, b_idx, t_phi, t_line, b_date, e_date, 
     println(fic,"")
     println(fic,string("     InitUpDownTime = ",string(1), " ; "))
     println(fic,"")
+    println(fic,string("     MinDownTime = ",string(t_line.MinDownTime), " ; "))
+    println(fic,"")
+    if ( t_line.FixToMaximum > 0 )
+        println(fic,string("     FixToMaximum = ",string(t_line.FixToMaximum), " ; "))
+        println(fic,"")
+    end    
     if ( length(r_sch) > 0 )
         println(fic,string("     ReferenceSchedule = ", chop(string(r_sch),head=1), "  ;" ));
         println(fic,"")

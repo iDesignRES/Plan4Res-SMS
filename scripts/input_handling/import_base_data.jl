@@ -173,14 +173,17 @@ function make_generator_data(bus_data, gen_data, st_idx)
     delta_vc = (0.1 / nb_thf)
 
     # Make the thermal unit file from this
-    tu_thf_data = DataFrame(Zone=Vector{String}(undef, nb_thf), Name=Vector{String}(undef, nb_thf), NumberUnits=Vector{Int64}(undef, nb_thf),
-        MaxPower=Vector{Float64}(undef, nb_thf), MaxPowerProfile=Vector{String}(undef, nb_thf), VariableCost=Vector{Float64}(undef, nb_thf), FixedCost=Vector{Float64}(undef, nb_thf),
+    tu_thf_data = DataFrame(Zone=Vector{String}(undef, nb_thf), Name=Vector{String}(undef, nb_thf), NumberUnits=Vector{Int64}(undef, nb_thf), MinDownTime=Vector{Int64}(undef, nb_thf), MinPower=Vector{Float64}(undef, nb_thf),
+        MaxPower=Vector{Float64}(undef, nb_thf), MaxPowerProfile=Vector{String}(undef, nb_thf), FixToMaximum=Vector{Int64}(undef, nb_thf), VariableCost=Vector{Float64}(undef, nb_thf), FixedCost=Vector{Float64}(undef, nb_thf),
         InvestmentCost=Vector{Float64}(undef, nb_thf), Capacity=Vector{Float64}(undef, nb_thf), Energy=Vector{Float64}(undef, nb_thf),
         MaxAddedCapacity=Vector{Float64}(undef, nb_thf))
 
     tu_thf_data[!, :NumberUnits] .= 1
     tu_thf_data[!, :Energy] .= 0.0
     tu_thf_data[!, :MaxPowerProfile] .= ""
+    tu_thf_data[!, :FixToMaximum] .= 0
+    tu_thf_data[!, :MinPower] .= 0.0
+    tu_thf_data[!, :MinDownTime] .= 0
 
     i_thf = 0
     for i = 1:nT

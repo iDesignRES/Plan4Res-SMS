@@ -49,12 +49,15 @@ edf_impexp    = string(github_local_d, github_smsppout, "/nuts0/results_simul/Fl
 # -- any real data: (if not available, then empty string)
 if ( day_choice == 0 )
     real_impexp   = string(github_local_d, "/input_data/","import_export_0807.csv")
+    imposed_pwr   = string(github_local_d, "/input_data/","imposed_gen_d1.csv")
 elseif ( day_choice == 1 )
     real_impexp   = string(github_local_d, "/input_data/","import_export_0212.csv")
+    imposed_pwr   = string(github_local_d, "/input_data/","imposed_gen_d2.csv")
 else
     error("Undefined day")
 end
 #real_impexp   = ""
+#imposed_pwr   = ""
 #
 focus_country = "ES"
 #
@@ -65,17 +68,25 @@ th_limit_factor  = 0.7 # Factor to reduce the thermal line capacities artificial
 with_selfpomatwo = true #Consider the p4r computation as "POMATWO" -> consistency for Hydro mostly
 with_marketmode = false # If true we solve with all units but on a single mode. This is essentially the result of POMATWO - but by preserving consistency on hydro and the like;
 with_intraday   = true # If true - read the appropriate load factors (forecast) and apply them to RES as well as Load if there 
+with_imposed_generators = true #the generators in the respective file will be more or less imposed to have a minimal power output at least the average of what is in the file
 pumpstormode    = true # final minimal volume equal to initial volume
 #intraday_id     = 1    # Associated id
 #intraday_ex    = "_DA" #Extension for the SMSpp file
-intraday_ex    = string("_ID",day_str,"_c", lpad(intraday_id-1,2,"0"))
-#intraday_ex  = string("_ID",day_str,"_g2")
+#intraday_ex    = string("_ID",day_str,"_c", lpad(intraday_id-1,2,"0"))
+intraday_ex  = string("_ID",day_str,"_da")
 #intraday_ex  = "_bal_da"
 with_dcopf    = false #true
 with_acopf    = true #supersedes with_dcopf flag
-tan_phi       = 0.57 # assuming 30° phase angle
+tan_phi       = 0.328 # assuming a 18° phase angle
+                      # 0.57 # assuming 30° phase angle
 nb_clip       = 1 # 24 #Clip the timeperiod into multiple substeps in case of DC opf
-nb_sstep      = div(convert(Dates.Hour, (uc_end_date - uc_bgn_date)).value, nb_clip)
+nb_times      = convert(Dates.Hour, (uc_end_date - uc_bgn_date)).value
+nb_sstep      = div(nb_times, nb_clip)
+
+# Generators are not imposed in day-ahead computations and in market mode
+if ( occursin("_da", intraday_ex) && with_marketmode )
+    with_imposed_generators = false
+end
 
 #
 res_load_factor = Matrix{Float64}(undef,0, 2)
@@ -169,8 +180,8 @@ vol_data  = CSV.read( vol_file, DataFrame; delim=',')
 # Build the import data frame == thermal units generating the to be imported production
 # Make the thermal unit file from this
 nb_imp = 0
-tu_imp_data = DataFrame(Zone=Vector{String}(undef, nb_imp), Name=Vector{String}(undef, nb_imp), NumberUnits=Vector{Int64}(undef, nb_imp),
-                        MaxPower=Vector{Float64}(undef, nb_imp), MaxPowerProfile=Vector{String}(undef, nb_imp), VariableCost=Vector{Float64}(undef, nb_imp),	FixedCost=Vector{Float64}(undef, nb_imp),	
+tu_imp_data = DataFrame(Zone=Vector{String}(undef, nb_imp), Name=Vector{String}(undef, nb_imp), NumberUnits=Vector{Int64}(undef, nb_imp), MinDownTime=Vector{Int64}(undef, nb_imp), MinPower=Vector{Float64}(undef, nb_imp),
+                        MaxPower=Vector{Float64}(undef, nb_imp), MaxPowerProfile=Vector{String}(undef, nb_imp), FixToMaximum=Vector{Int64}(undef, nb_imp), VariableCost=Vector{Float64}(undef, nb_imp),	FixedCost=Vector{Float64}(undef, nb_imp),	
                         InvestmentCost=Vector{Float64}(undef, nb_imp),	Capacity=Vector{Float64}(undef, nb_imp),	Energy=Vector{Float64}(undef, nb_imp),	
                        	MaxAddedCapacity=Vector{Float64}(undef, nb_imp) )
 
@@ -192,7 +203,7 @@ end
 # Add / replace real import/export data if exists
 if ( !isempty( real_impexp ) )
     rrimpexp = CSV.read( real_impexp, DataFrame; delim=';')
-    if ( size(rrimpexp)[1] != nb_sstep )
+    if ( size(rrimpexp)[1] != nb_times )
         error("this is not ok")
     end
     ccoln = names(rrimpexp)[2:end]
@@ -215,18 +226,25 @@ if ( !isempty( real_impexp ) )
             # there is data to put here
             if ( !isempty(itargetp) )
                 if ( !isempty(isourcep))
-                    impexp_data[i0:(i0+nb_sstep-1),1+itargetp[1]] .= rrimpexp[:, 1+isourcep[1]]
+                    impexp_data[i0:(i0+nb_times-1),1+itargetp[1]] .= rrimpexp[:, 1+isourcep[1]]
                 else
-                    impexp_data[i0:(i0+nb_sstep-1),1+itargetp[1]] .= -1.0*rrimpexp[:, 1+isourcem[1]]
+                    impexp_data[i0:(i0+nb_times-1),1+itargetp[1]] .= -1.0*rrimpexp[:, 1+isourcem[1]]
                 end
             else
                 if ( !isempty(isourcep))
-                    impexp_data[i0:(i0+nb_sstep-1),1+itargetm[1]] .= -1.0*rrimpexp[:, 1+isourcep[1]]
+                    impexp_data[i0:(i0+nb_times-1),1+itargetm[1]] .= -1.0*rrimpexp[:, 1+isourcep[1]]
                 else
-                    impexp_data[i0:(i0+nb_sstep-1),1+itargetm[1]] .= rrimpexp[:, 1+isourcem[1]]
+                    impexp_data[i0:(i0+nb_times-1),1+itargetm[1]] .= rrimpexp[:, 1+isourcem[1]]
                 end
             end
         end
+    end
+end
+
+# Read imposed generator file if any
+if ( with_imposed_generators )
+    if ( !isempty( imposed_pwr ) )
+        imppwr = CSV.read( imposed_pwr, DataFrame; delim=';')
     end
 end
 
@@ -273,7 +291,7 @@ for j=1:length(countries_to_cut)
             #push!( tu_imp_data, [string(bus_data.country[I[l]],"_", bus_data.bus_id[I[l]]),"IMP",1,1.0,fic_name_i,
             #                     0.001, 0,0,0,0,0 ] )
 
-            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),string("IMP_",countries_to_cut[j],"_",l),1,1.0,fic_name_i,
+            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),string("IMP_",countries_to_cut[j],"_",l),1, 0 , 0.0,1.0,fic_name_i, 1,
                                  0.001, 0,0,0,0,0 ] )
 
             #Add little column to det_ts
@@ -299,7 +317,7 @@ for j=1:length(countries_to_cut)
             #push!( tu_imp_data, [string(bus_data.country[I[l]],"_", bus_data.bus_id[I[l]]),"IMP",1, 1.0, fic_name_i,
             #                     0.001, 0,0,0,0,0 ] )
             
-            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),string("IMP_",countries_to_cut[j],"_",l),1, 1.0, fic_name_i,
+            push!( tu_imp_data, [string(bus_data.bus_id[I[l]]),string("IMP_",countries_to_cut[j],"_",l),1, 0, 0.0, 1.0, fic_name_i, 1,
                                  0.001, 0,0,0,0,0 ] )
 
             #Add little column to det_ts
@@ -561,6 +579,18 @@ for itl=1:nb_icdata
                 incon_data[itl, :LineRatio] = 0.0                
             end
         end
+        if ( lines_data.dc[i] == "t" )
+            incon_data[itl, :Susceptance] = 0.0
+            if ( with_acopf )
+                incon_data[itl, :LineResistance] = 0.0
+                incon_data[itl, :LineReactance] = 0.0
+                incon_data[itl, :LineMinAngle] = 0.0
+                incon_data[itl, :LineMaxAngle] = 0.0
+                incon_data[itl, :LineShiftAngle] = 0.0
+                incon_data[itl, :LineRATEA] = round(th_limit_factor*sqrt(3)*nb_par_lines[itl]*lines_data.Imax[i]*lines_data.voltage[i]; digits=3) #round(sqrt(1 + tan_phi^2)*incon_data.MaxPowerFlow[itl][1]; digits=3)
+                incon_data[itl, :LineRatio] = 0.0
+            end
+        end
     end
 end
 # Investment data
@@ -629,9 +659,25 @@ blist = make_generator_baselists(st_idx)
 append!(tu_thf_data, tu_imp_data)
 
 # In Market mode kill any fixed costs
-if ( with_marketmode )
+#if ( with_marketmode )
     tu_thf_data[!, :FixedCost] .= 0.0
+#end
+
+# Go through the list of imposed generators
+if ( with_imposed_generators )
+    for nm in names( imppwr )
+        #avg = mean( imppwr[:,nm] )
+        I = findall( tu_thf_data.Name .== nm )
+        if ( !isempty(I) )
+            tu_thf_data.MaxPowerProfile[I[1]] = string( imppwr[:,nm]' )
+            tu_thf_data.FixToMaximum[I[1]] = 1
+        #    tu_thf_data.MinPower[I[1]] = avg
+        #    tu_thf_data.MinDownTime[I[1]] = 12 #should suffice
+        end
+    end
+
 end
+
 
 #tu_thf_data[!,:Zone] .= "Nowhere"
 CSV.write(string(github_local_d, github_smsppin,"/nutsx/TU_ThermalUnits.csv"), tu_thf_data; delim=';')
@@ -642,6 +688,9 @@ CSV.write(string(github_local_d, github_smsppin,"/nutsx/TU_ThermalUnits.csv"), t
 tu_agg_d = similar(tu_thf_data,0)
 # Delete de MaxPowerProfile column not useful for NUTS0 computations and add the MaxRetCapacity Column
 select!(tu_agg_d, Not("MaxPowerProfile"))
+select!(tu_agg_d, Not("MinPower"))
+select!(tu_agg_d, Not("MinDownTime"))
+select!(tu_agg_d, Not("FixToMaximum"))
 insertcols!(tu_agg_d, :MaxRetCapacity=>Vector{Float64}(undef, 0) )
 
 # For each country and each techno we add stuff
@@ -793,7 +842,10 @@ println("    runofriver: ", strVtoTable(unique(sub_ror[:,:unit_id])) )
 #
 #
 #@time begin
-smspp_bname = "spain_block"    
+smspp_bname = "spain_block"
+if ( !with_dcopf && !with_acopf && !with_marketmode )
+    smspp_bname = string(smspp_bname, "_flow")
+end
 if ( with_dcopf && !with_acopf )
     smspp_bname = string(smspp_bname, "_dcopf")
 end
