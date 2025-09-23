@@ -57,3 +57,19 @@ SMSppThroughJulia.value_nuclear_on_price( [10.0, 10.0, 10.0, 10.0, 10.0, 10.0, 1
 , "test/data/Nblock_mod3.nc4")
  
 [910.0000000000005, 911.0000000000005, 912.000000000001, 913.000000000001, 925.0, 925.0, 920.000000000033, 910.0, 900.0, 890.0, 880.0, 855.0, 845.0, 835.0, 825.0, 800.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+# Alternative - automated test
+
+Alternatively one can run
+
+using SMSppThroughJulia
+
+followed up by 
+
+SMSppThroughJulia.test()
+
+then one should see displayed
+
+Testing : 8 / 8 - passed => indicating succes
+
+
